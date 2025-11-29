@@ -1,5 +1,4 @@
 # data_processor.py
-
 import asyncio
 from datetime import datetime
 from typing import Dict
@@ -31,7 +30,7 @@ class DataProcessor:
         total_sec = int(ts.timestamp())
         # Snap the timestamp to the start of the bar interval
         return total_sec - (total_sec % interval_sec)
-
+    
     def _process_tick(self, tick: Dict):
         """Processes a single tick against all required timeframes."""
         symbol = tick['symbol']
@@ -52,7 +51,7 @@ class DataProcessor:
                 
                 # If the tick's bar is newer than the one we are building, close the old one
                 if current_bar_ts > prev_bar['ts']:
-                    # The previous bar is complete, save it to the DB
+                    # The previous bar is complete, now save it to the DB
                     asyncio.create_task(self.db_manager.insert_bar({
                         'symbol': symbol,
                         'timeframe': tf_str,
@@ -64,7 +63,7 @@ class DataProcessor:
                         'volume': prev_bar['volume'],
                     }))
                     
-                    # Start a new bar
+                    # Starting a new bar
                     self.open_bars[symbol][tf_str] = {
                         'ts': current_bar_ts,
                         'open': price,
@@ -80,7 +79,7 @@ class DataProcessor:
                     prev_bar['close'] = price
                     prev_bar['volume'] += size
             
-            # --- 2. Initialize the first bar ---
+            # --- 2. Initializing the first bar ---
             else:
                 self.open_bars[symbol][tf_str] = {
                     'ts': current_bar_ts,
@@ -106,4 +105,4 @@ class DataProcessor:
             
             # In a real-time system, a brief pause here can prevent the processor 
             # from consuming too much CPU during high tick rates, though not strictly required now.
-            # await asyncio.sleep(0)
+            await asyncio.sleep(0)
