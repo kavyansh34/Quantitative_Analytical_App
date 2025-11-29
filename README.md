@@ -39,7 +39,38 @@ Start Backend (Ingestion & Analytics): (This must run first to populate the data
 python app.py
 ```
 
+## 3. Quantitative Analytics Methodology
+
+The `AnalyticsEngine` implements core and advanced techniques for cointegration trading.
+
+| Feature | Calculation Method | Purpose |
+| :--- | :--- | :--- |
+| **Hedge Ratio ($\beta$)** | **Static OLS Regression** | Provides the conventional, fixed ratio for spread calculation. |
+| **Dynamic Hedge ($\beta_t$)**| **Kalman Filter** | Computes a time-varying, adaptive hedge ratio, resulting in a more robust spread signal. |
+| **Spread & Z-score** | Calculated from the chosen hedge ratio and normalized by a rolling mean ($\mu$) and standard deviation ($\sigma$). | Generates the core mean-reversion trading signal. |
+| **Stationarity Test**| **Augmented Dickey-Fuller (ADF) Test** | Used to statistically confirm if the spread is mean-reverting (stationary). |
+
+### Advanced Features (Trader Utility)
+
+* **Mini Mean-Reversion Backtest:** Simulates the performance of the simple Z-score strategy ($\text{Entry}: |Z| > 2, \text{Exit}: |Z| \approx 0$) on historical bars.
+* **Liquidity Filters:** Dynamically limits available asset pairs based on a minimum **1-Minute Volume** to support risk-aware pair selection.
+* **Cross-Correlation Heatmap:** Provides a visual tool for quick pair discovery among all available assets.
+* **Data Export/Upload:** Allows downloading processed data and includes functionality to upload external OHLC data for analysis.
+
 Start Frontend (Dashboard):
 ```bash
 streamlit run dashboard.py
 ```
+## 4. Deliverables and Transparency
+
+### Required Attachments
+
+To fulfill the evaluation requirements, the submission includes:
+
+* **`README.md`** (This file)
+* **Architecture Diagram** (PNG/SVG) and **Source File** (`.drawio`)
+* **Runnable Code** (Python files)
+
+### ChatGPT Usage Transparency
+
+LLM tools were used for generating boilerplate Python code (`asyncio` patterns, Streamlit setup, `pykalman` initialization) and structuring the project architecture and documentation (`README.md`, Design Rationale) to align with technical best practices and assignment requirements.
