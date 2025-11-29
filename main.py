@@ -1,5 +1,4 @@
-# app.py (Further Updated)
-
+# app.py 
 import asyncio
 from datetime import datetime
 from Ingestion_client import QuantIngestionClient
@@ -9,6 +8,7 @@ import numpy as np
 from analytics import AnalyticsEngine # Import the new module
 
 # We will analyze this pair for cointegration
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
 PAIR_X, PAIR_Y = "BTCUSDT", "ETHUSDT" 
 TIMEFRAME = "1M" # Use 1-minute bars for analysis
 WINDOW = 60 # Rolling window for Z-score and Correlation
@@ -57,7 +57,7 @@ async def main():
 
     # 2. Initialize the shared queue and Ingestion Client
     tick_queue = asyncio.Queue()
-    ingestion_client = QuantIngestionClient([PAIR_X, PAIR_Y], tick_queue) # Focus on the pair
+    ingestion_client = QuantIngestionClient(SYMBOLS, tick_queue) # Focus on the pair
     ingestion_task = asyncio.create_task(ingestion_client.start())
 
     # 3. Start the Data Processor
