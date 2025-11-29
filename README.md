@@ -61,16 +61,4 @@ Start Frontend (Dashboard):
 ```bash
 streamlit run dashboard.py
 ```
-## 4. Deliverables and Transparency
 
-### Required Attachments
-
-To fulfill the evaluation requirements, the submission includes:
-
-* **`README.md`** (This file)
-* **Architecture Diagram** (PNG/SVG) and **Source File** (`.drawio`)
-* **Runnable Code** (Python files)
-
-### ChatGPT Usage Transparency
-
-LLM tools were used for generating boilerplate Python code (`asyncio` patterns, Streamlit setup, `pykalman` initialization) and structuring the project architecture and documentation (`README.md`, Design Rationale) to align with technical best practices and assignment requirements.
