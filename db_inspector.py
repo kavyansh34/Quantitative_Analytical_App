@@ -45,3 +45,4 @@ def inspect_database(db_path="quant_data.db"):
 
 if __name__ == "__main__":
     inspect_database()
+
