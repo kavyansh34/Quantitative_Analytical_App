@@ -1,5 +1,4 @@
 # ingestion_client.py
-
 import asyncio
 import json
 import websockets
@@ -23,16 +22,27 @@ class QuantIngestionClient:
         print(f"Subscribing to symbols: {self.symbols}")
 
     def _normalize_tick(self, message: Dict) -> Dict:
-        """Converts raw Binance trade message into a standardized format."""
+        """Converts raw Binance trade message into a standardized format and validates it."""
         if message.get('e') == 'trade':
-            # Use the trade time (T) or event time (E) for the timestamp
+            
+            # --- VALIDATION BLOCK (The FIX) ---
+            price = float(message.get('p', 0))
+            size = float(message.get('q', 0))
+            
+            # Reject ticks where price is zero or negative, or size is zero.
+            if price <= 0.0 or size <= 0.0:
+                # You can log this for monitoring purposes
+                # print(f"Rejected tick for {message['s']}: Price={price}, Size={size}")
+                return None
+            # --- END VALIDATION BLOCK ---
+
             ts_ms = message.get('T') or message.get('E')
             
             return {
                 "symbol": message['s'].upper(),
                 "ts": datetime.fromtimestamp(ts_ms / 1000).isoformat(),
-                "price": float(message['p']),
-                "size": float(message['q']),
+                "price": price,
+                "size": size,
             }
         return None
 
