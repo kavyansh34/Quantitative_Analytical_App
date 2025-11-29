@@ -10,14 +10,10 @@ from datetime import datetime
 import time
 
 # --- Import Backend Modules ---
-# Note: For simplicity in Streamlit, we'll initialize the core components 
-# and use st.session_state to manage the long-running async tasks.
-
 from db_manager import DBManager
-from analytics import AnalyticsEngine
-# The Ingestion and DataProcessor will run as separate background processes
-# or be initialized within Streamlit's async context. For this final step, 
-# we'll assume the DB is being populated by a separate running process (app.py).
+# Assuming 'analytics.py' imports the AnalyticsEngine class
+from analytics import AnalyticsEngine 
+from pykalman import KalmanFilter 
 
 # --- Configuration ---
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"] 
@@ -25,7 +21,6 @@ TIMEFRAMES = ["1S", "1M", "5M"]
 DEFAULT_WINDOW = 60 # Default lookback for rolling metrics
 
 # --- Initialization and Setup ---
-# Use Streamlit's mechanism to manage state and connect to the backend
 if 'db_manager' not in st.session_state:
     st.session_state.db_manager = DBManager()
     st.session_state.analytics_engine = AnalyticsEngine(st.session_state.db_manager)
@@ -33,69 +28,60 @@ if 'db_manager' not in st.session_state:
     asyncio.run(st.session_state.db_manager.initialize())
 
 @st.cache_data(show_spinner=False)
-def get_analytics_data(symbol_x, symbol_y, timeframe, window):
+def get_analytics_data(symbol_x, symbol_y, timeframe, window, reg_type):
     """
-    Function to fetch data and compute analytics.
-    Uses caching for performance, but the 'ts' dependency (via time.time())
-    will force updates every few seconds.
+    Function to fetch data and compute analytics, dynamically choosing OLS or Kalman Spread.
+    The 'ts' dependency forces updates every few seconds.
     """
-    # Use a dummy key based on time to refresh data every ~5 seconds
-    # This simulates a near-real-time update for the plots/stats.
     refresh_key = int(time.time() / 5) 
-
     ae = st.session_state.analytics_engine
     
-    # Run the async functions synchronously within the cache context
-    df_spread, hedge_ratio = asyncio.run(ae.get_spread_data(symbol_x, symbol_y, timeframe))
+    # --- DYNAMIC REGRESSION LOGIC (KALMAN INTEGRATION) ---
+    if reg_type == "Static OLS":
+        # Assumes ae.get_spread_data now returns df_spread and static_hedge_ratio
+        # You will need to ensure your ae.get_spread_data returns the necessary OLS info.
+        df_spread, hedge_ratio = asyncio.run(ae.get_spread_data(symbol_x, symbol_y, timeframe))
+        hedge_ratio_display = f"{hedge_ratio:.4f}"
+    else: # Dynamic Kalman Filter
+        # This assumes ae.get_kalman_spread_data is implemented in analytics_engine.py
+        df_kalman, beta_series = asyncio.run(ae.get_kalman_spread_data(symbol_x, symbol_y, timeframe))
+        df_spread = df_kalman.rename(columns={'Kalman_Spread': 'Spread'})
+        # Use the latest beta for display
+        hedge_ratio_display = f"{beta_series.iloc[-1]:.4f}" 
+    # --- END DYNAMIC REGRESSION LOGIC ---
+
+    # Z-Score and Correlation use the selected/computed df_spread
     df_z_score = asyncio.run(ae.get_z_score(df_spread.copy(), window))
     df_corr = asyncio.run(ae.get_rolling_correlation(symbol_x, symbol_y, timeframe, window))
     
-    # ADF is triggered manually, so we don't run it here every 5 seconds.
-    
-    return df_spread, df_z_score, df_corr, hedge_ratio
+    return df_spread, df_z_score, df_corr, hedge_ratio_display
 
-# --- Plotting Functions ---
-
+# --- Plotting Functions (Unchanged) ---
 def plot_ohlc_price(df: pd.DataFrame, symbol: str, timeframe: str):
-    """Generates an interactive OHLC/Line chart[cite: 16, 26]."""
+    # ... (function body remains the same) ...
     if df.empty:
         return go.Figure()
-
     fig = go.Figure(data=[
-        go.Candlestick(
-            x=df.index,
-            open=df['open'],
-            high=df['high'],
-            low=df['low'],
-            close=df['close'],
-            name=symbol
-        )
+        go.Candlestick(x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'], name=symbol)
     ])
     fig.update_layout(
-        title=f'{symbol} Price ({timeframe})',
-        xaxis_title="Time",
-        yaxis_title="Price (USD)",
-        xaxis_rangeslider_visible=False,
-        height=400
+        title=f'{symbol} Price ({timeframe})', xaxis_title="Time", yaxis_title="Price (USD)", xaxis_rangeslider_visible=False, height=400
     )
     return fig
 
 def plot_spread_zscore(df_z_score: pd.DataFrame):
-    """Plots the Spread and the Z-Score."""
+    # ... (function body remains the same) ...
     if df_z_score.empty:
         return go.Figure()
 
     fig = go.Figure()
-    
     # 1. Spread Plot
-    fig.add_trace(go.Scatter(x=df_z_score.index, y=df_z_score['Spread'], 
-                             mode='lines', name='Spread'))
+    fig.add_trace(go.Scatter(x=df_z_score.index, y=df_z_score['Spread'], mode='lines', name='Spread'))
     
     # 2. Z-Score Lines (for mean-reversion)
     fig.add_hline(y=df_z_score['Rolling_Mean'].iloc[-1], line_dash="dash", line_color="gray", annotation_text="Mean")
     fig.add_hline(y=df_z_score['Rolling_Mean'].iloc[-1] + 2*df_z_score['Rolling_Std'].iloc[-1], line_dash="dash", line_color="red", annotation_text="+2 Std Dev")
     fig.add_hline(y=df_z_score['Rolling_Mean'].iloc[-1] - 2*df_z_score['Rolling_Std'].iloc[-1], line_dash="dash", line_color="red", annotation_text="-2 Std Dev")
-
     fig.update_layout(title='Pairs Spread', height=300, showlegend=True)
     
     # Create Z-Score Subplot
@@ -108,17 +94,45 @@ def plot_spread_zscore(df_z_score: pd.DataFrame):
     return fig, fig_z
 
 # --- Main Dashboard Layout ---
-
 st.title("⚡️ Real-Time Quant Analytics Dashboard")
 st.markdown("---")
 
-# --- Sidebar for Controls  ---
+# --- Sidebar for Controls ---
 st.sidebar.header("⚙️ Settings")
 
-# Symbol Selection
+# --- Liquidity Filter Logic ---
+st.sidebar.subheader("Liquidity Filter")
+liquidity_stats = asyncio.run(st.session_state.analytics_engine.get_liquidity_stats("1M"))
+
+min_volume = st.sidebar.number_input(
+    "Min 1-Min Volume (Base Units)", 
+    min_value=0, 
+    value=1, 
+    step=1, 
+    help="Only show symbols where the last 1M bar volume exceeds this."
+)
+
+filtered_symbols = [
+    sym for sym in SYMBOLS 
+    if liquidity_stats.get(sym, 0) >= min_volume
+]
+
+default_x = st.session_state.get('sym_x', SYMBOLS[0])
+default_y = st.session_state.get('sym_y', SYMBOLS[1])
+
+symbol_x_list = filtered_symbols
+symbol_y_list = [s for s in filtered_symbols if s != default_x]
+
+idx_x = symbol_x_list.index(default_x) if default_x in symbol_x_list else 0
+idx_y = symbol_y_list.index(default_y) if default_y in symbol_y_list else (0 if len(symbol_y_list)>0 else -1)
+
+# --- CORRECTED Symbol Selection (Uses the filtered list) ---
 st.sidebar.subheader("Symbol Selection (Pair)")
-symbol_x = st.sidebar.selectbox("Symbol X (Base)", SYMBOLS, index=0, key='sym_x')
-symbol_y = st.sidebar.selectbox("Symbol Y (Hedged)", [s for s in SYMBOLS if s != symbol_x], index=0, key='sym_y')
+symbol_x = st.sidebar.selectbox("Symbol X (Base)", symbol_x_list, index=idx_x, key='sym_x')
+symbol_y = st.sidebar.selectbox("Symbol Y (Hedged)", [s for s in filtered_symbols if s != symbol_x], index=idx_y, key='sym_y')
+
+# --- NEW: Regression Type Control ---
+regression_type = st.sidebar.selectbox("Regression Type", ["Static OLS", "Dynamic Kalman Filter"], index=0, key='reg_type')
 
 # Timeframe Selection
 timeframe = st.sidebar.selectbox("Timeframe", TIMEFRAMES, index=1, key='tf')
@@ -129,32 +143,33 @@ rolling_window = st.sidebar.slider("Rolling Window (Bars)", 10, 200, DEFAULT_WIN
 # --- Main Content: Analytics and Charts ---
 
 st.header(f"Pairs Analytics: {symbol_x} / {symbol_y} ({timeframe})")
-placeholder = st.empty() # Placeholder for live updates
+placeholder = st.empty() 
 
 with placeholder.container():
     st.subheader("Live Analytics (Refreshes every 5s)")
     
     # --- Data Retrieval & Computation ---
-    df_spread, df_z_score, df_corr, hedge_ratio = get_analytics_data(symbol_x, symbol_y, timeframe, rolling_window)
+    df_spread, df_z_score, df_corr, hedge_ratio_display = get_analytics_data(symbol_x, symbol_y, timeframe, rolling_window, regression_type)
     
     # --- Check for insufficient data ---
     if df_spread.empty or df_z_score.empty:
         st.warning(f"Waiting for sufficient {timeframe} bars to be saved for {symbol_x} and {symbol_y}. (Need >{rolling_window} bars)")
         st.stop()
 
-    # --- 1. Key Statistics (Summary Stats)  ---
+    # --- 1. Key Statistics (Summary Stats) ---
     latest_z = df_z_score['Z_Score'].iloc[-1]
     latest_corr = df_corr['Correlation'].iloc[-1]
     
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Hedge Ratio (β)", f"{hedge_ratio:.4f}")
+    # The display string now includes the regression type (Static or Dynamic)
+    col1.metric(f"Hedge Ratio ({regression_type})", hedge_ratio_display) 
     col2.metric("Latest Z-Score", f"{latest_z:.2f}")
     col3.metric("Rolling Correlation", f"{latest_corr:.4f}")
     col4.metric("Spread Std Dev", f"{df_z_score['Rolling_Std'].iloc[-1]:.4f}")
 
     st.markdown("---")
 
-    # --- 2. Alerting Logic  ---
+    # --- 2. Alerting Logic ---
     st.subheader("🚨 Alerting System")
     alert_threshold = st.number_input("Z-Score Alert Threshold (e.g., 2.0)", min_value=1.0, max_value=5.0, value=2.0)
     
@@ -165,9 +180,9 @@ with placeholder.container():
 
     st.markdown("---")
 
-    # --- 3. Visualization [cite: 24, 26] ---
+    # --- 3. Visualization ---
     
-    st.subheader("Spread and Z-Score Plots")
+    st.subheader(f"Spread and Z-Score Plots ({regression_type})") # Dynamic title
     spread_fig, zscore_fig = plot_spread_zscore(df_z_score)
     st.plotly_chart(spread_fig, use_container_width=True)
     st.plotly_chart(zscore_fig, use_container_width=True)
@@ -180,7 +195,6 @@ with placeholder.container():
     st.subheader(f"Price Charts ({timeframe})")
     col_x, col_y = st.columns(2)
     
-    # Fetch data for price charts (we need raw close price for X and Y)
     df_x = asyncio.run(st.session_state.db_manager.fetch_bars(symbol_x, timeframe, limit=500))
     df_y = asyncio.run(st.session_state.db_manager.fetch_bars(symbol_y, timeframe, limit=500))
     df_x = st.session_state.analytics_engine._prepare_data(df_x)
@@ -191,8 +205,36 @@ with placeholder.container():
     with col_y:
         st.plotly_chart(plot_ohlc_price(df_y, symbol_y, timeframe), use_container_width=True)
 
+    st.markdown("---")
 
-# --- 4. ADF Test Trigger  ---
+    # --- Cross-Correlation Heatmap (Discovery Tool) ---
+    st.header("🔥 Cross-Correlation Heatmap (Discovery Tool)")
+    heatmap_timeframe = st.selectbox("Timeframe for Correlation Matrix", ["1M", "5M"], index=0, key='heatmap_tf')
+    heatmap_window = st.slider("Correlation Window (Bars)", 10, 200, 60, key='heatmap_window_slider')
+
+    if st.button("Generate Correlation Matrix"):
+        with st.spinner(f'Computing {heatmap_window}-bar correlation for all available symbols...'):
+            corr_matrix_df = asyncio.run(
+                st.session_state.analytics.get_cross_correlation_matrix(
+                    symbol_x_list, heatmap_timeframe, heatmap_window
+                )
+            )
+            
+            if not corr_matrix_df.empty:
+                fig = px.imshow(
+                    corr_matrix_df,
+                    text_auto=True,
+                    aspect="auto",
+                    color_continuous_scale='RdBu_r',
+                    title=f'Correlation Matrix ({heatmap_timeframe}, {heatmap_window} bars)'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.info("Look for values close to +1 (highly correlated) or -1 (inversely correlated) for potential pairs.")
+            else:
+                st.warning("Insufficient synchronized data to generate the heatmap.")
+
+
+# --- 4. ADF Test Trigger ---
 st.markdown("---")
 st.header("🔬 Statistical Tests")
 
@@ -210,11 +252,10 @@ if st.button("Run ADF Test on Current Spread"):
             st.error("Could not run test.")
 
 
-# --- 5. Data Export  ---
+# --- 5. Data Export ---
 st.markdown("---")
 st.header("📥 Data Export")
 
-# Example for exporting the Z-Score data
 csv_data = df_z_score.to_csv(index=True).encode('utf-8')
 st.download_button(
     label="Download Z-Score & Spread Data as CSV",
@@ -223,7 +264,7 @@ st.download_button(
     mime='text/csv',
 )
 
-# --- 6. OHLC Data Upload [cite: 39] ---
+# --- 6. OHLC Data Upload ---
 st.markdown("---")
 st.header("⬆️ Upload Historical OHLC Data")
 
@@ -231,18 +272,13 @@ uploaded_file = st.file_uploader("Upload OHLC CSV (must contain 'open', 'high', 
 
 if uploaded_file is not None:
     try:
-        # Load the data
         uploaded_df = pd.read_csv(uploaded_file, index_col=0, parse_dates=True)
         required_cols = ['open', 'high', 'low', 'close', 'volume']
 
-        # Validation (mandatory that this works without any dummy upload [cite: 39])
         if not all(col in uploaded_df.columns for col in required_cols):
              st.error(f"Error: Uploaded file must contain all required columns: {required_cols}")
         else:
              st.success("File uploaded and validated successfully! You can now process this data.")
-             
-             # Placeholder for processing logic (e.g., storing to a separate "historical" table 
-             # and running analytics on it)
              st.dataframe(uploaded_df.head())
 
     except Exception as e:
