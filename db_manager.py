@@ -1,5 +1,4 @@
 # db_manager.py
-
 import aiosqlite
 from typing import Dict, List
 
@@ -60,3 +59,26 @@ class DBManager:
                 LIMIT ?
             """, (symbol, timeframe, limit))
             return [dict(row) for row in await cursor.fetchall()]
+    # db_manager.py (Addition)
+
+    
+    async def fetch_latest_ohlcv_for_all(self, timeframe: str, limit: int = 1):
+        """Fetches the latest OHLCV data across ALL symbols for a given timeframe."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Use an INNER JOIN to get the latest entry for each symbol in the timeframe
+            # Note: This is a simplified way; a real-world query might use a window function.
+            cursor = await db.execute(f"""
+                SELECT symbol, close, volume, ts FROM ohlc_bars 
+                WHERE timeframe = ? 
+                ORDER BY ts DESC 
+                LIMIT 100 -- Arbitrary limit to get recent data for multiple symbols
+            """, (timeframe,))
+            
+            # Group by symbol to get the single latest bar (or aggregate volume if limit > 1)
+            results = {}
+            for row in await cursor.fetchall():
+                row_dict = dict(row)
+                if row_dict['symbol'] not in results:
+                    results[row_dict['symbol']] = row_dict
+            return results
