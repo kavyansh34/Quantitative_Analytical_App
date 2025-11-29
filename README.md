@@ -14,7 +14,6 @@ This application is a complete, end-to-end **Real-Time Quantitative Analytics St
 
 * **Dynamic Hedge Estimation (Kalman Filter):** Implements the advanced **Kalman Filter** to calculate a **time-varying, adaptive hedge ratio ($\beta_t$)**, which is essential for deriving a robust spread signal in volatile, non-stationary markets.
 * **Static Baseline:** Includes **Static OLS Regression** for traditional hedge ratio calculation, providing a baseline for comparison.
-* **Backtesting Utility:** Features a **Mini Mean-Reversion Backtest** module to simulate the performance of the $Z$-score strategy ($\text{Entry}: |Z| > 2, \text{Exit}: |Z| \approx 0$) on historical data, providing quantifiable feedback on the strategy's efficacy.
 * **Statistical Validity:** Features the **Augmented Dickey-Fuller (ADF) Test** to allow the user to statistically confirm if the generated spread is stationary (mean-reverting).
 
 ### 🛠️ Architecture and Data Pipeline
