@@ -28,3 +28,18 @@ Ensure you have Python (3.9+) and the following libraries installed:
 
 ```bash
 pip install streamlit websockets pandas numpy statsmodels aiosqlite plotly pykalman
+```
+
+### Execution (Runnable App)
+
+The application requires two separate terminal commands for operation:
+Start Backend (Ingestion & Analytics): (This must run first to populate the database.)
+
+```bash
+python app.py
+```
+
+Start Frontend (Dashboard):
+```bash
+streamlit run dashboard.py
+```
